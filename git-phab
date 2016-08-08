@@ -452,6 +452,7 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
         except:
             print("%s%s not a valid remote, can't use it%s." % (
                 Colors.HEADER, self.remote, Colors.ENDC))
+            self.remote = None
             return
 
         # Get remote's fetch URL. Unfortunately we can't get it from config
@@ -1438,7 +1439,7 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
 
         return True
 
-    def do_cherry_pick(self):
+    def cherry_pick(self):
         if self.repo.is_dirty():
             self.die("Repository is dirty. Aborting.")
 
@@ -1464,10 +1465,7 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
             self.am_patch(filename, diff.get("sourceControlBaseRevision"))
         os.unlink(filename)
 
-    def get_differentials_to_apply(self):
-        if self.repo.is_dirty():
-            self.die("Repository is dirty. Aborting.")
-
+    def get_differentials_to_apply_for_revision(self):
         print("Checking revision:", self.differential)
         did = self.differential.strip("D")
 
@@ -1491,8 +1489,8 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
                 dq.append((revision, diff))
         return pq
 
-    def do_merge(self):
-        pq = self.get_differentials_to_apply()
+    def apply_differential_with_dependencies(self):
+        pq = self.get_differentials_to_apply_for_revision()
         n = 0
         while pq != []:
             (r, d) = pq.pop()
@@ -1506,27 +1504,80 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
             os.unlink(filename)
             n += 1
 
+    def do_apply(self):
+        if self.repo.is_dirty():
+            self.die("Repository is dirty. Aborting.")
+        elif not self.differential and not self.task:
+            self.die("No task or revision provided. Aborting.")
+
+        if self.differential:
+            if self.no_dependencies:
+                self.cherry_pick()
+            else:
+                self.apply_differential_with_dependencies()
+
+            return
+
+        commit_info = self.fetch_from_task()
+        if self.no_dependencies:
+            if commit_info[0]:
+                self.repo.git.cherry_pick(commit_info[0].hexsha)
+                return
+            else:
+                self.die("Can not apply revisions from a task"
+                         " without its dependencies as the task"
+                         " might refer to several revisions.")
+
+        starting_commit = self.repo.head.commit
+        try:
+            common_ancestor = self.repo.merge_base(commit_info[0],
+                                                   starting_commit)
+        except git.exc.GitCommandError:
+            self.die("No common ancestor found between Task commit"
+                     " and the current repository.")
+
+        for commit in reversed(list(self.repo.iter_commits(
+                common_ancestor[0].hexsha + '^..' + commit_info[0].hexsha))):
+            try:
+                self.repo.git.cherry_pick(commit.hexsha)
+            except git.exc.GitCommandError as e:
+                stderr = e.stderr.decode("utf-8")
+                if "The previous cherry-pick is now empty," \
+                        " possibly due to conflict resolution." \
+                        in stderr:
+                    self.repo.git.reset()
+                elif stderr.startswith("error: could not apply"):
+                    self.die("%s\\nnWhen the conflict are fixed run"
+                             " `git phab apply %s` again." % (
+                                 stderr, self.task))
+                else:
+                    raise e
+
     def do_log(self):
         commits = self.get_commits(self.revision_range)
         self.print_commits(commits)
 
     def fetch_from_task(self):
-
         reply = self.phabricator.maniphest.query(ids=[int(self.task[1:])])
+        if not reply:
+            self.die("Not task found for ID: %s" % self.task)
 
-        try:
-            props = list(reply.values())[0]
-            uri = props['auxiliary']['std:maniphest:git:uri-branch']
-            remote, branch = uri.split('#')
-        except:
-            self.die("Git URI is not set on task; cannot fetch it.")
+        props = list(reply.values())[0]
+        auxiliary = props['auxiliary']
+        if not auxiliary or not auxiliary.get('std:maniphest:git:uri-branch'):
+            # FIXME: There is currently no way to retrieve revisions
+            # associated with a task from the conduit API
+            self.die("%sCan not apply revisions from a task"
+                     " if no 'remote branch' has been set for it.%s\n"
+                     "INFO: You need to find what revisions are"
+                     " associated with the tasks and apply them."
+                     % (Colors.FAIL, Colors.ENDC))
 
-        print("Git URI: %s, branch: %s" % (remote, branch))
+        uri = auxiliary['std:maniphest:git:uri-branch']
+        remote, branch = uri.split('#')
+
         self.repo.git.fetch(remote, "%s" % branch)
-
         commit = self.repo.commit('FETCH_HEAD')
-        print("Commit '%s' from remote branch '%s' has been fetched" %
-              (commit.hexsha, branch))
 
         return (commit, remote, branch)
 
@@ -1619,7 +1670,7 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
                 branchname_match_method = self.revision_from_branchname
                 branch_name = self.differential
             else:
-                pq = self.get_differentials_to_apply()
+                pq = self.get_differentials_to_apply_for_revision()
                 if not pq:
                     print("Not differential to apply.")
                     return
@@ -1893,28 +1944,20 @@ if __name__ == '__main__':
              "the tracking branch is used") \
         .completer = DisabledCompleter
 
-    cherrypick_parser = subparsers.add_parser(
-        'cherry-pick', help="Cherrypick a patch from differential")
-    cherrypick_parser.add_argument(
+    apply_parser = subparsers.add_parser(
+        'apply', help="Apply a revision and its dependencies"
+        " on the current tree")
+    apply_parser.add_argument(
         '--output-directory', '-o',
         metavar='<directory>',
         help="Directory to put patches in")
-    cherrypick_parser.add_argument(
-        'differential', metavar='Differential ID',
-        default=None,
-        help="help Differential ID to cherrypick") \
+    apply_parser.add_argument(
+        'task_or_revision', metavar='<(T|D)123>', nargs='?',
+        help="The task or revision to fetch") \
         .completer = DisabledCompleter
-
-    merge_parser = subparsers.add_parser(
-        'merge', help="Merge a revision and its dependencies")
-    merge_parser.add_argument(
-        '--output-directory', '-o',
-        metavar='<directory>',
-        help="Directory to put patches in")
-    merge_parser.add_argument(
-        'differential', metavar='Differential ID',
-        default=None,
-        help="help Differential ID to merge") \
+    apply_parser.add_argument(
+        '--no-dependencies', "-n", action="store_true",
+        help="Do not apply dependencies of a revision.") \
         .completer = DisabledCompleter
 
     log_parser = subparsers.add_parser(
