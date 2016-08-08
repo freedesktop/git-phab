@@ -1477,15 +1477,12 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
             top = dq.pop()
             pq.append(top)
             depends = top[0]['auxiliary']['phabricator:depends-on']
-            print("* D{}:".format(top[0]['id']))
             for p in depends:
                 revision, diff = self.get_revision_and_diff(phid=p)
 
                 if self.has_been_applied(revision):
-                    print("** D{}: Already applied".format(revision['id']))
                     continue
 
-                print("** D{}".format(revision['id']))
                 dq.append((revision, diff))
         return pq
 
