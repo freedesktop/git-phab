@@ -353,7 +353,7 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
             # Fetch what has already been proposed on the task if we don't have
             # it locally yet.
             if not remote_commit:
-                remote_commit = self.fetch()[0]
+                remote_commit = self.fetch_from_task()[0]
 
             # Get the index in commits and all_commits lists of the common
             # ancestor between HEAD and what has already been proposed.
@@ -747,8 +747,9 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
     def run_linter(self):
         if not os.path.exists(".pre-commit-config.yaml"):
             if os.path.exists(".arclint"):
-                return subprocess.check_output("arc lint --never-apply-patches",
-                                               shell=True).decode("utf-8")
+                return subprocess.check_output(
+                    "arc lint --never-apply-patches",
+                    shell=True).decode("utf-8")
             else:
                 return None
         command = ["pre-commit", "run", "--files"]
@@ -1509,7 +1510,7 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
         commits = self.get_commits(self.revision_range)
         self.print_commits(commits)
 
-    def fetch(self):
+    def fetch_from_task(self):
 
         reply = self.phabricator.maniphest.query(ids=[int(self.task[1:])])
 
@@ -1527,13 +1528,77 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
         print("Commit '%s' from remote branch '%s' has been fetched" %
               (commit.hexsha, branch))
 
-        return (commit, branch)
+        return (commit, remote, branch)
+
+    def create_fake_fetch(self, revision, diff):
+        current_branch = self.repo.active_branch
+        base_commit = diff.get("sourceControlBaseRevision")
+        if base_commit:
+            try:
+                self.repo.git.checkout(base_commit)
+            except git.exc.GitCommandError:
+                base_commit = None
+
+        if not base_commit:
+            print("%sWARNING: Building `fake fetch` from"
+                  " current commit (%s)\nas we do not have"
+                  " information or access to the base commit"
+                  " the revision has been proposed from%s" % (
+                      Colors.WARNING, self.repo.head.commit.hexsha,
+                      Colors.ENDC))
+            self.repo.git.checkout(self.repo.head.commit.hexsha)
+
+        pq = self.get_differentials_to_apply_for_revision()
+        if pq:
+            n = 0
+            while pq != []:
+                (r, d) = pq.pop()
+
+                filename = self.write_patch_file(r, d)
+                print("Applying D{}".format(r['id']))
+
+                self.am_patch(filename, None)
+                os.unlink(filename)
+                n += 1
+
+        branch_name = revision.get('branch')
+        if not branch_name:
+            branch_name = self.differential
+        else:
+            branch_name = self.differential + "-" + branch_name
+
+        remote = "file://" + self.repo.working_dir
+        with open(os.path.join(self.repo.working_dir, ".git",
+                               "FETCH_HEAD"),
+                  "w") as fetch_head_file:
+            fetch_head_file.write("%s		branch '%s' of file://%s" % (
+                self.repo.head.commit.hexsha, branch_name, remote))
+
+        current_branch.checkout()
+
+        return remote, branch_name
 
     def do_fetch(self):
-        if not self.task:
-            self.die("No task provided. Aborting.")
+        if not self.differential and not self.task:
+            self.die("No task or revision provided. Aborting.")
 
-        self.fetch()
+        if self.checkout:
+            self.do_checkout()
+            return
+
+        if self.differential:
+            infos = self.fetch_from_revision()
+            if not isinstance(infos[0], git.Commit):
+                remote, branch_name = self.create_fake_fetch(*infos)
+            else:
+                commit, branch_name = infos
+                remote = self.staging_url
+        else:
+            commit, remote, branch_name = self.fetch_from_task()
+
+        print("From %s\n"
+              " * branch    %s -> FETCH_HEAD" % (
+                  remote, branch_name))
 
     def fetch_from_revision(self):
         did = self.differential.strip("D")
@@ -1541,19 +1606,16 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
         revision, diff = self.get_revision_and_diff(diff=did)
 
         if not self.fetch_staging_commits(diff):
-            return None, None
+            return revision, diff
 
         return (self.repo.rev_parse("FETCH_HEAD"),
                 self.differential + '-' + revision['branch'])
 
     def do_checkout(self):
-        if not self.differential and not self.task:
-            self.die("No task or revision provided. Aborting.")
-
         pq = None
         if self.differential:
-            commit, remote_branch_name = self.fetch_from_revision()
-            if commit:
+            infos = self.fetch_from_revision()
+            if not isinstance(infos[0], git.Commit):
                 branchname_match_method = self.revision_from_branchname
                 branch_name = self.differential
             else:
@@ -1576,7 +1638,7 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
                 branchname_match_method = self.revision_from_branchname
                 remote_branch_name = branch_name = self.differential
         else:
-            commit, remote_branch_name = self.fetch()
+            commit, remote, remote_branch_name = self.fetch_from_task()
             branchname_match_method = self.task_from_branchname
             branch_name = self.task
 
@@ -1682,7 +1744,7 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
             self.die("Repository is dirty. Aborting.")
 
         if self.task:
-            commit, remote_branch_name = self.fetch()
+            commit, remote, remote_branch_name = self.fetch_from_task()
             branch = self.repo.active_branch
             if not self.prompt("Do you want to reset branch %s to %s?" %
                                (branch.name, commit.hexsha)):
@@ -1867,15 +1929,12 @@ if __name__ == '__main__':
     fetch_parser = subparsers.add_parser(
         'fetch', help="Fetch a task's branch")
     fetch_parser.add_argument(
-        'task', metavar='<T123>', nargs='?',
-        help="The task to fetch") \
+        'task_or_revision', metavar='<(T|D)123>', nargs='?',
+        help="The task or revision to fetch") \
         .completer = DisabledCompleter
-
-    checkout_parser = subparsers.add_parser(
-        'checkout', help="Checkout a task's branch")
-    checkout_parser.add_argument(
-        'task_or_revision', metavar='<T123>', nargs='?',
-        help="The task or revision to checkout") \
+    fetch_parser.add_argument(
+        '--checkout', "-c", action="store_true",
+        help="Also checks out the commits in a branch.") \
         .completer = DisabledCompleter
 
     browse_parser = subparsers.add_parser(
