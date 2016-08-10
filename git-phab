@@ -1414,7 +1414,11 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
 
     def am_patch(self, filename, base_commit):
         try:
-            self.repo.git.am(filename)
+            # Pass --keep-cr to avoid breaking on patches for code which uses
+            # CRLF line endings, due to automatically removing them before
+            # applying the patch. See
+            # http://stackoverflow.com/a/16144559/2931197
+            self.repo.git.am(filename, keep_cr=True)
             return
         except git.exc.GitCommandError as e:
             self.repo.git.am("--abort")
