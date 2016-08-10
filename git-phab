@@ -94,20 +94,26 @@ class GitPhab:
 
         self.repo = git.Repo(os.getcwd(), search_parent_directories=True)
         self.read_arcconfig()
-        self.login()
 
-    def login(self):
+        self._phabricator = None
+        self._phab_user = None
+
+    @property
+    def phabricator(self):
+        if self._phabricator:
+            return self._phabricator
+
         needs_credential = False
         try:
             host = self.phabricator_uri + "/api/"
-            self.phabricator = phabricator.Phabricator(timeout=120, host=host)
+            self._phabricator = phabricator.Phabricator(timeout=120, host=host)
 
             if not self.phabricator.token and not self.phabricator.certificate:
                 needs_credential = True
 
             # FIXME, workaround
             # https://github.com/disqus/python-phabricator/issues/37
-            self.phabricator.differential.creatediff.api.interface[
+            self._phabricator.differential.creatediff.api.interface[
                 "differential"]["creatediff"]["required"]["changes"] = dict
         except phabricator.ConfigurationError:
             needs_credential = True
@@ -119,7 +125,16 @@ class GitPhab:
             else:
                 self.die("Please setup login certificate before trying again")
 
-        self.phab_user = self.phabricator.user.whoami()
+        return self._phabricator
+
+    @property
+    def phab_user(self):
+        if self._phab_user:
+            return self._phab_user
+
+        self._phab_user = self.phabricator.user.whoami()
+
+        return self._phab_user
 
     def setup_login_certificate(self):
         token = input("""LOGIN TO PHABRICATOR
