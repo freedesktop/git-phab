@@ -1609,44 +1609,51 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
                 os.unlink(filename)
                 n += 1
 
-        branch_name = revision.get('branch')
-        if not branch_name:
-            branch_name = self.differential
-        else:
-            branch_name = self.differential + "-" + branch_name
+        branch_name = self.clean_phab_branch_name(revision.get('branch'),
+                                                  self.differential)
 
         remote = "file://" + self.repo.working_dir
         with open(os.path.join(self.repo.working_dir, ".git",
                                "FETCH_HEAD"),
                   "w") as fetch_head_file:
-            fetch_head_file.write("%s		branch '%s' of file://%s" % (
+            fetch_head_file.write("%s		branch '%s' of %s" % (
                 self.repo.head.commit.hexsha, branch_name, remote))
 
         current_branch.checkout()
+        commit = self.repo.commit('FETCH_HEAD')
 
-        return remote, branch_name
+        return commit, remote, branch_name
 
     def do_fetch(self):
         if not self.differential and not self.task:
             self.die("No task or revision provided. Aborting.")
 
-        if self.checkout:
-            self.do_checkout()
-            return
-
         if self.differential:
-            infos = self.fetch_from_revision()
-            if not isinstance(infos[0], git.Commit):
-                remote, branch_name = self.create_fake_fetch(*infos)
-            else:
-                commit, branch_name = infos
-                remote = self.staging_url
+            commit, remote, branch_name = self.fetch_from_revision()
         else:
             commit, remote, branch_name = self.fetch_from_task()
 
-        print("From %s\n"
-              " * branch    %s -> FETCH_HEAD" % (
-                  remote, branch_name))
+        if not self.checkout:
+            print("From %s\n"
+                  " * branch    %s -> FETCH_HEAD" % (
+                      remote, branch_name))
+            return
+
+        self.checkout_branch(commit, remote, branch_name)
+
+    def clean_phab_branch_name(self, branch_name, default):
+        if not branch_name or branch_name in ['master']:
+            return default
+
+        revision = self.revision_from_branchname(branch_name)
+        if revision:
+            return branch_name[len(revision + '-'):]
+
+        task = self.task_from_branchname(branch_name)
+        if task:
+            return branch_name[len(task + '-'):]
+
+        return branch_name
 
     def fetch_from_revision(self):
         did = self.differential.strip("D")
@@ -1654,39 +1661,17 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
         revision, diff = self.get_revision_and_diff(diff=did)
 
         if not self.fetch_staging_commits(diff):
-            return revision, diff
+            return self.create_fake_fetch(revision, diff)
 
-        return (self.repo.rev_parse("FETCH_HEAD"),
-                self.differential + '-' + revision['branch'])
+        return (self.repo.rev_parse("FETCH_HEAD"), self.staging_url,
+                self.clean_phab_branch_name(revision['branch'],
+                                            self.differential))
 
-    def do_checkout(self):
-        pq = None
+    def checkout_branch(self, commit, remote, remote_branch_name):
         if self.differential:
-            infos = self.fetch_from_revision()
-            if not isinstance(infos[0], git.Commit):
-                branchname_match_method = self.revision_from_branchname
-                branch_name = self.differential
-            else:
-                pq = self.get_differentials_to_apply_for_revision()
-                if not pq:
-                    print("Not differential to apply.")
-                    return
-
-                revision, diff = pq[-1]
-                base_commit = diff.get("sourceControlBaseRevision")
-                if not base_commit:
-                    self.die("No information about the base commit"
-                             "from which to checkout %s branch"
-                             % self.differential)
-                commit = self.repo.rev_parse(base_commit)
-                if not commit:
-                    self.die("Could not checkout base commit %s from"
-                             "which to checkout %s" % (base_commit,
-                                                       self.differential))
-                branchname_match_method = self.revision_from_branchname
-                remote_branch_name = branch_name = self.differential
+            branchname_match_method = self.revision_from_branchname
+            branch_name = self.differential
         else:
-            commit, remote, remote_branch_name = self.fetch_from_task()
             branchname_match_method = self.task_from_branchname
             branch_name = self.task
 
@@ -1709,19 +1694,6 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
             print("New branch %s has been created." % branch.name)
 
         branch.checkout()
-
-        if pq:
-            n = 0
-            while pq != []:
-                (r, d) = pq.pop()
-
-                filename = self.write_patch_file(r, d)
-                print("Applying D{}".format(r['id']))
-
-                self.am_patch(filename, None)
-                os.unlink(filename)
-                n += 1
-            return
 
     def do_browse(self):
         urls = []
