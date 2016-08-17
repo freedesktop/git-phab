@@ -580,19 +580,25 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
         if "repository.callsign" in self.arcconfig:
             reply = self.phabricator.repository.query(
                 callsigns=[self.arcconfig["repository.callsign"]])
-            assert(len(reply) == 1)
-            self.phab_repo = reply[0]
+
+            if len(reply) > 1:
+                self.die("Multiple repositories returned for callsign ‘{}’.\n"
+                         "You should check your Phabricator "
+                         "configuration.".format(
+                             self.arcconfig["repository.callsign"]))
         else:
-            for phab_repo in self.phabricator.repository.query(limit=10000):
-                if self.phab_repo:
-                    break
+            uris = [remote.url for remote in self.repo.remotes]
+            reply = self.phabricator.repository.query(
+                remoteURIs=uris)
 
-                for remote in self.repo.remotes:
-                    if phab_repo['remoteURI'] == remote.url:
-                        self.phab_repo = phab_repo
-                        break
+            if len(reply) > 1:
+                self.die("Multiple repositories returned for remote URIs "
+                         "({}).\nYou should check your Phabricator "
+                         "configuration.".format(', '.join(uris)))
 
-        if not self.phab_repo:
+        try:
+            self.phab_repo = reply[0]
+        except IndexError:
             self.die("Could not determine Phabricator repository\n"
                      "You should check your git remote URIs match those "
                      "in Phabricator, or set 'repository.callsign' in "
