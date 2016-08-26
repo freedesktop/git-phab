@@ -749,7 +749,7 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
         if not os.path.exists(".pre-commit-config.yaml"):
             if os.path.exists(".arclint"):
                 subprocess.check_call("arc lint --never-apply-patches",
-                                      shell=True).decode("utf-8")
+                                      shell=True)
                 return None
             else:
                 return None
