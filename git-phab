@@ -783,7 +783,7 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
                 with open(fname) as f:
                     for i, l in enumerate(f):
                         pass
-            except (FileNotFoundError, IsADirectoryError):
+            except (FileNotFoundError, IsADirectoryError, UnicodeDecodeError):
                 return 0
 
             return i + 1
