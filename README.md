@@ -1,8 +1,11 @@
 INSTALL
 =======
 
+Install dependencies and copy or symlink executables into your $PATH
+
 ```
     $ pip3 install -r requirements.txt
+    $ ln -s $PWD/git-phab ~/.local/bin/
 ```
 
 Optionaly generate and copy or symlink manpage into your $MANPATH
