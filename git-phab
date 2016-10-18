@@ -607,9 +607,17 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
                 remoteURIs=uris)
 
             if len(reply) > 1:
-                self.die("Multiple repositories returned for remote URIs "
-                         "({}).\nYou should check your Phabricator "
-                         "configuration.".format(', '.join(uris)))
+                tracking = self.repo.head.reference.tracking_branch()
+                # Use the remote that this branch is tracking.
+                uris = [remote.url for remote in self.repo.remotes
+                        if remote.name == tracking.remote_name]
+                reply = self.phabricator.repository.query(
+                    remoteURIs=uris)
+
+                if len(reply) > 1:
+                    self.die("Multiple repositories returned for remote URIs "
+                             "({}).\nYou should check your Phabricator "
+                             "configuration.".format(', '.join(uris)))
 
         try:
             self.phab_repo = reply[0]
