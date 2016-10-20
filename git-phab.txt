@@ -8,17 +8,17 @@ git-phab - Git subcommand to integrate with phabricator.
 SYNOPSIS
 --------
 [verse]
-'git phab attach' [-h] [--reviewers <username1,#project2,...>]
-                [--cc <username1,#project2,...>] [--message <message>]
-                [--task <T123>] [--remote <remote>] [--assume-yes]
-                [--projects <project1,project2,...>]
-                [<revision range>]
-'git phab log' [-h] [<revision range>]
-'git phab fetch' [-h] [<T123>]
-'git phab checkout' [-h] [<T123>]
-'git phab browse' [-h] [objects [objects ...]]
-'git phab clean' [-h]
-'git phab land' [-h] [--no-push]
+*git phab attach* [-h] [--reviewers '<username1,#project2,...>']
+                [--cc '<username1,#project2,...>'] [--message '<message>']
+                [--task '<T123>'] [--remote <remote>] [--assume-yes]
+                [--projects '<project1,project2,...>']
+                ['<revision range>']
+*git phab log* [-h] [<revision range>]
+*git phab fetch* [-h] ['<T123>']
+*git phab checkout* [-h] ['<T123>']
+*git phab browse* [-h] ['objects' ['objects' ...]]
+*git phab clean* [-h]
+*git phab land* [-h] [--no-push]
 
 DESCRIPTION
 -----------
@@ -27,21 +27,21 @@ Provides integration for projects using Phabricator.
 
 The current repository must contain a valid `.arcconfig` file and a remote
 location to push submitted branches must be defined using:
-[verse]
-git config phab.remote <remote>
+
+  git config phab.remote <remote>
 
 COMMANDS
 --------
 
-'attach'::
+*attach*::
 
-Creates a new differential for each commit in the provided <revision_range>.
+Creates a new differential for each commit in the provided '<revision_range>'.
 Commit messages will be rewritten to include the URL of the newly created
 Differential (no other information will be added to the message). If a commit
 message already contains the URL of a Differential it will be updated instead of
 creating a new one.
 +
-<revision_range> can be either a range of commits or a single commit, as
+'<revision_range>' can be either a range of commits or a single commit, as
 understood by `git rev-parse`. If omitted, the default range is from the remote
 current branch's remote tracking commit to HEAD.
 +
@@ -57,32 +57,33 @@ If a task is defined but the current branch is not in the form
 `Txxx-description`, it will prompt if a new branch must be created using current
 branch's name prefixed with `Txxx-`.
 
-'log'::
+*log*::
 
 Prints all commits in the provided <revision_range>. For each commit it displays
 the Differential ID and its current status. See the 'attach' command for details
-on how <revision_range> is formed.
+on how '<revision_range>' is formed.
 
-'fetch'::
+*fetch*::
 
 Fetch the branch linked to a Maniphest task. With no argument the task will be
 defined from the current branch name, if it is in the form `Txxx-description`.
 +
 This only fetch and print the commit id, it won't create or checkout a branch.
 A new branch can then be created using, for example:
-[verse]
-git checkout -b my-branch FETCH_HEAD
-See also 'checkout' command.
 
-'checkout'::
+  git checkout -b my-branch FETCH_HEAD
 
-Same as 'fetch' but also create a new branch and check it out. If an existing
+See also *checkout* command.
+
+*checkout*::
+
+Same as *fetch* but also create a new branch and check it out. If an existing
 branch is found for the same task it will prompt to reset that branch to the
 newly fetched commit, then checkout is as well.
 
-'browse'::
+*browse*::
 
-Open related URIs in a web browser using 'xdg-open'.
+Open related URIs in a web browser using *xdg-open*.
 +
 With no argument, if the current branch is in the form `Txxx-description`, opens
 that Maniphest task.
@@ -92,19 +93,19 @@ Differential/Maniphest. Otherwise it is assumed that object is a commit as
 understood by `git rev-parse` and if that commit contains a link to a
 Differential it will be open.
 
-'clean'::
+*clean*::
 
 For all local and remote references, if they are in the form `Txxx-description`
 and the corresponding task has been closed, prompt if that branch should be
 removed.
 
-'land'::
+*land*::
 
 Same as `git push` but for each commit that would be pushed, query who approved
 its differential and add corresponding 'Reviewed-by:' line. Note that the email
 address is guessed by looking the reviewer's fullname into `git shortlog`. If
 the fullname cannot be found it will be asked then stored into
-~/.config/git/phab so it won't be prompted again.
+`~/.config/git/phab` so it won't be prompted again.
 +
 For each related tasks, also prompt if it should be closed.
 
@@ -112,26 +113,26 @@ Examples
 --------
 
 Attach all commits since origin/master
-[verse]
+
   $ git phab attach
 
 Attach only the top commit
-[verse]
+
   $ git phab attach HEAD
 
 Attach all commits since origin/master, excluding top commit
-[verse]
+
   $ git phab attach origin/master..HEAD^
 
 Attach top 3 patches, link them to a task, and set reviewers
-[verse]
+
   $ git phab attach --reviewers xclaesse,smcv --task T123 HEAD~3..
 
 Push current branch to origin/wip/phab/T123
-[verse]
+
   $ git config phab.remote origin
   $ git phab attach --task T123
 
 Fetch a branch associated with the task T123
-[verse]
+
   $ git phab fetch T123
