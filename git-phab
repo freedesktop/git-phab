@@ -875,16 +875,29 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
             filetype = "1"
         else:
             hunks = []
-            phab_file = self.phabricator.file.upload(
-                data_base64=base64.standard_b64encode(
-                    diff.b_blob.data_stream[-1].read()).decode("utf-8"))
+
+            if not diff.deleted_file:
+                b_phab_file = self.phabricator.file.upload(
+                    data_base64=base64.standard_b64encode(
+                        diff.b_blob.data_stream[-1].read()).decode("utf-8"))
+            else:
+                b_phab_file = None
+
+            if not diff.new_file:
+                a_phab_file = self.phabricator.file.upload(
+                    data_base64=base64.standard_b64encode(
+                        diff.a_blob.data_stream[-1].read()).decode("utf-8"))
+            else:
+                a_phab_file = None
 
             filetype = "3"
             metadata = {
                 "old:file:size": diff.a_blob.size if diff.a_blob else 0,
+                "old:file:mime-type": diff.a_blob.mime_type if diff.a_blob else '',
+                "old:binary-phid": a_phab_file.response if a_phab_file else '',
                 "new:file:size": diff.b_blob.size if diff.b_blob else 0,
-                "new:file:mime-type": diff.b_blob.mime_type,
-                "new:binary-phid": phab_file.response
+                "new:file:mime-type": diff.b_blob.mime_type if diff.b_blob else '',
+                "new:binary-phid": b_phab_file.response if b_phab_file else '',
             }
 
         return change_filename, {"metadata": metadata,
