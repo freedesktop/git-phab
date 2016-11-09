@@ -1502,6 +1502,9 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
             for p in depends:
                 revision, diff = self.get_revision_and_diff(phid=p)
 
+                if revision.get('statusName') == 'Abandoned':
+                    continue
+
                 if self.has_been_applied(revision):
                     continue
 
