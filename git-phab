@@ -1008,7 +1008,7 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
             name="local:commits",
             data=json.dumps(commit_infos))
 
-    def attach_commit(self, commit):
+    def attach_commit(self, commit, proposed_commits):
         linter_message = None
         print("    * Running linters...", end="")
         linter_status = "none"
@@ -1041,9 +1041,13 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
         except IndexError:
             last_revision_id = None
 
-        if last_revision_id:
+        # Make sure that we do no add dependency on already closed revision
+        # (avoiding making query on the server when not needed)
+        if last_revision_id and \
+                self.repo.head.commit.parents[0] not in proposed_commits and \
+                not self.phabricator.differential.query(ids=[last_revision_id],
+                                                        status="status-closed"):
             body.append("Depends on D%s" % last_revision_id)
-
         phab_fields.append("Projects: %s" % ','.join(self.project_phids))
 
         summary = ('\n'.join(body) + '\n' +
@@ -1205,7 +1209,8 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
                 if not patch_attachement_failure and commit in commits:
                     print("-> Attaching %s:" % self.format_commit(commit))
                     try:
-                        new, revision, diff = self.attach_commit(commit)
+                        new, revision, diff = self.attach_commit(
+                            commit, all_commits)
                     except Exception as e:
                         logging.exception("Failed proposing patch. "
                                           "Finnish rebuilding branch "
