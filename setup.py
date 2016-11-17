@@ -11,7 +11,7 @@ else:
 
 setup(
     name="git-phab",
-    version="1.9.0",
+    version="2.0.0",
     author="Xavier Claessens",
     author_email="xavier.claessens@collabora.com",
     description=("Git subcommand to integrate with phabricator"),
