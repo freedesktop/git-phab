@@ -104,6 +104,13 @@ class GitPhab:
         if self._phabricator:
             return self._phabricator
 
+        if self.arcrc:
+            try:
+                with open(self.arcrc) as f:
+                    phabricator.ARCRC.update(json.load(f))
+            except FileNotFoundError:
+                self.die("Failed to load a given arcrc file, %s" % self.arcrc)
+
         needs_credential = False
         try:
             host = self.phabricator_uri + "/api/"
