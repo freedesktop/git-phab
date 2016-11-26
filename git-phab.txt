@@ -15,6 +15,7 @@ SYNOPSIS
                 ['<revision range>']
 *git phab log* [-h] [<revision range>]
 *git phab fetch* [-h] ['<T123>']
+*git phab apply* [-h] ['<(T|D)123>'] [-n] [-o '<directory>']
 *git phab checkout* [-h] ['<T123>']
 *git phab browse* [-h] ['objects' ['objects' ...]]
 *git phab clean* [-h]
@@ -74,6 +75,15 @@ A new branch can then be created using, for example:
   git checkout -b my-branch FETCH_HEAD
 
 See also *checkout* command.
+
+*apply*::
+
+Apply a revision and its dependencies.
++
+With `--no-dependencies` (or `-n`), revision's dependencies will not be applied.
++
+With `--output-directory` (or `-n`), patches aren't applied to the repository,
+but exported to a directory instead.
 
 *checkout*::
 
