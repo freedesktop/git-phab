@@ -22,6 +22,7 @@
 # http://www.gnu.org/licenses/.
 
 import base64
+import configparser
 import logging
 import socket
 import tempfile
@@ -78,6 +79,39 @@ class Colors:
         cls.ENDC = '\033[0m'
 
 
+def stash(func):
+    def wrapper(self, *args):
+        needs_stash = self.repo.is_dirty()
+        if needs_stash:
+            if not self.autostash:
+                self.die(
+                    "Repository is dirty. Aborting.\n"
+                    "You can use `--autostash` to automatically"
+                    " stash uncommitted changes\n"
+                    "You can also `git config [--global] phab.autostash true`"
+                    " to make it permanent")
+            print("Stashing current changes before attaching patches")
+            self.repo.git.stash()
+        try:
+            func(self, *args)
+        finally:
+            if needs_stash:
+                print("Restoring stashed changes")
+                stash_name = "stash@{0}"
+                if self.repo.is_dirty():
+                    # This might happen if some linting tool starts
+                    # changing the code.
+                    stash_name = "stash@{1}"
+                    print("Some more changes have been done"
+                          " during the process, stashing them"
+                          " and going back to the state before attaching.\n"
+                          " You can see those with `git stash show stash@{0}`")
+                    self.repo.git.stash()
+                self.repo.git.stash('pop', stash_name)
+
+    return wrapper
+
+
 class GitPhab:
 
     def __init__(self):
@@ -92,6 +126,7 @@ class GitPhab:
         self.output_directory = None
         self.phab_repo = None
         self.staging_url = None
+        self.autostash = False
 
         self.repo = git.Repo(os.getcwd(), search_parent_directories=True)
         self.read_arcconfig()
@@ -538,6 +573,13 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
 
         if self.remote:
             self.validate_remote()
+
+        try:
+            self.autostash |= self.repo.config_reader().get_value(
+                'phab', 'autostash')
+        except configparser.NoOptionError:
+            pass
+
         # Try to guess the task from branch name
         if self.repo.head.is_detached:
             self.die("HEAD is currently detached. Aborting.")
@@ -915,10 +957,12 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
             filetype = "3"
             metadata = {
                 "old:file:size": diff.a_blob.size if diff.a_blob else 0,
-                "old:file:mime-type": diff.a_blob.mime_type if diff.a_blob else '',
+                "old:file:mime-type": diff.a_blob.mime_type if diff.a_blob else
+                '',
                 "old:binary-phid": a_phab_file.response if a_phab_file else '',
                 "new:file:size": diff.b_blob.size if diff.b_blob else 0,
-                "new:file:mime-type": diff.b_blob.mime_type if diff.b_blob else '',
+                "new:file:mime-type": diff.b_blob.mime_type if diff.b_blob else
+                '',
                 "new:binary-phid": b_phab_file.response if b_phab_file else '',
             }
 
@@ -1060,8 +1104,8 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
         # (avoiding making query on the server when not needed)
         if last_revision_id and \
                 self.repo.head.commit.parents[0] not in proposed_commits and \
-                not self.phabricator.differential.query(ids=[last_revision_id],
-                                                        status="status-closed"):
+                not self.phabricator.differential.query(
+                    ids=[last_revision_id], status="status-closed"):
             body.append("Depends on D%s" % last_revision_id)
         phab_fields.append("Projects: %s" % ','.join(self.project_phids))
 
@@ -1139,10 +1183,8 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
                 diffid=diff.diffid,
                 message=message), diff
 
+    @stash
     def do_attach(self):
-        if self.repo.is_dirty():
-            self.die("Repository is dirty. Aborting.")
-
         # If we are in branch "T123" and user does "git phab attach -t T456",
         # that's suspicious. Better stop before doing a mistake.
         if self.branch_task and self.branch_task != self.task:
@@ -1571,10 +1613,9 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
             os.unlink(filename)
             n += 1
 
+    @stash
     def do_apply(self):
-        if self.repo.is_dirty():
-            self.die("Repository is dirty. Aborting.")
-        elif not self.differential and not self.task:
+        if not self.differential and not self.task:
             self.die("No task or revision provided. Aborting.")
 
         if self.differential:
@@ -1836,10 +1877,8 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
 
                     print("  -> Branch %s was deleted" % branch.name)
 
+    @stash
     def do_land(self):
-        if self.repo.is_dirty():
-            self.die("Repository is dirty. Aborting.")
-
         if self.task:
             commit, remote, remote_branch_name = self.fetch_from_task()
             branch = self.repo.active_branch
@@ -1940,6 +1979,7 @@ def check_dependencies_versions():
                  git.__version__, Colors.ENDC))
         exit(1)
 
+
 if __name__ == '__main__':
     check_dependencies_versions()
     parser = argparse.ArgumentParser(description='Phabricator integration.')
@@ -1989,6 +2029,12 @@ if __name__ == '__main__':
         help="commit or revision range to attach. When not specified, "
              "the tracking branch is used") \
         .completer = DisabledCompleter
+    attach_parser.add_argument(
+        '--autostash', action="store_true",
+        help="Automatically stash not committed changes."
+        " You can also `git config [--global] phab.autostash true` "
+        "to make it permanent") \
+        .completer = DisabledCompleter
 
     apply_parser = subparsers.add_parser(
         'apply', help="Apply a revision and its dependencies"
@@ -2004,6 +2050,12 @@ if __name__ == '__main__':
     apply_parser.add_argument(
         '--no-dependencies', "-n", action="store_true",
         help="Do not apply dependencies of a revision.") \
+        .completer = DisabledCompleter
+    apply_parser.add_argument(
+        '--autostash', action="store_true",
+        help="Automatically stash not committed changes."
+        " You can also `git config [--global] phab.autostash true` "
+        "to make it always happen") \
         .completer = DisabledCompleter
 
     log_parser = subparsers.add_parser(
@@ -2049,6 +2101,12 @@ if __name__ == '__main__':
     land_parser.add_argument(
         'task', metavar='<T123>', nargs='?',
         help="The task to land") \
+        .completer = DisabledCompleter
+    land_parser.add_argument(
+        '--autostash', action="store_true",
+        help="Automatically stash not committed changes."
+        " You can also `git config [--global] phab.autostash true` "
+        "to make it always happen") \
         .completer = DisabledCompleter
 
     argcomplete.autocomplete(parser)
