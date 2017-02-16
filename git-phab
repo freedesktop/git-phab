@@ -1018,23 +1018,29 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
 
         return diff
 
+    def get_diff_staging_ref(self, diffid):
+        return "refs/tags/phabricator/diff/%s" % diffid
+
     def push_diff_to_staging(self, diff, commit):
         if not self.staging_url:
             print("    * %sNo staging repo set, not pushing diff %s%s" % (
                 Colors.FAIL, diff.diffid, Colors.ENDC))
-            return
+            return None
 
         print("    * Pushing diff %d on the staging repo... " %
               diff.diffid, end='')
         try:
-            self.repo.git.push(
-                self.staging_url, "%s:refs/tags/phabricator/diff/%s" % (
-                    commit.hexsha, diff.diffid))
+            remote_ref = self.get_diff_staging_ref(diff.diffid)
+            self.repo.git.push(self.staging_url, "%s:%s" % (commit.hexsha,
+                                                            remote_ref))
             print("%sOK%s" % (Colors.OKGREEN, Colors.ENDC))
+
+            return remote_ref
         except git.exc.GitCommandError as e:
             print("%sERROR %s(%s)" % (Colors.FAIL,
                                       Colors.ENDC,
-                                      e.stderr.decode("utf-8")))
+                                      e.stderr.strip("\n")))
+        return None
 
     def update_local_commit_info(self, diff, commit):
         commit_infos = {
@@ -1183,6 +1189,40 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
                 diffid=diff.diffid,
                 message=message), diff
 
+    def update_task_branch_uri(self, staging_remote_refname):
+        summary = ""
+        remote_uri = None
+        if staging_remote_refname and self.task:
+            remote_uri = "%s#%s" % (self.staging_url, staging_remote_refname)
+        elif self.remote and self.task:
+            try:
+                branch = self.get_wip_branch()
+                remote = self.repo.remote(self.remote)
+                if self.prompt('Push HEAD to %s/%s?' % (remote, branch)):
+                    info = remote.push('HEAD:refs/heads/' + branch,
+                                       force=True)[0]
+                    if not info.flags & info.ERROR:
+                        summary += "  * Branch pushed to %s/%s\n" % (remote,
+                                                                     branch)
+                    else:
+                        print("-> Could not push branch %s/%s: %s" % (
+                            remote, branch, info.summary))
+
+                remote_uri = "%s#%s" % (self.remote_url, branch)
+            except Exception as e:
+                summary += "  * Failed: push wip branch: %s\n" % e
+
+        if remote_uri:
+            try:
+                self.phabricator.maniphest.update(
+                    id=int(self.task[1:]),
+                    auxiliary={"std:maniphest:git:uri-branch": remote_uri})
+            except:
+                print("-> Failed to set std:maniphest:git:uri-branch to %s"
+                      % remote_uri)
+
+        return summary
+
     @stash
     def do_attach(self):
         # If we are in branch "T123" and user does "git phab attach -t T456",
@@ -1251,6 +1291,7 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
         orig_branch = self.repo.head.reference
 
         patch_attachement_failure = False
+        staging_remote_refname = None
         try:
             # Detach HEAD from the branch; this gives a cleaner reflog for the
             # branch
@@ -1291,7 +1332,8 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
 
                     self.repo.git.commit("-n", amend=True, message=msg)
                     self.update_local_commit_info(diff, self.repo.head.object)
-                    self.push_diff_to_staging(diff, self.repo.head.object)
+                    staging_remote_refname = self.push_diff_to_staging(
+                        diff, self.repo.head.object)
                     print("%s-> OK%s" % (Colors.OKGREEN, Colors.ENDC))
 
                     summary += self.format_commit(self.repo.head.commit) + "\n"
@@ -1309,31 +1351,8 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
             self.repo.head.reset(index=True, working_tree=True)
             raise
 
-        if self.remote and self.task and not patch_attachement_failure:
-            try:
-                branch = self.get_wip_branch()
-                remote = self.repo.remote(self.remote)
-                if self.prompt('Push HEAD to %s/%s?' % (remote, branch)):
-                    info = remote.push('HEAD:refs/heads/' + branch,
-                                       force=True)[0]
-                    if not info.flags & info.ERROR:
-                        summary += "  * Branch pushed to %s/%s\n" % (remote,
-                                                                     branch)
-                    else:
-                        print("-> Could not push branch %s/%s: %s" % (
-                            remote, branch, info.summary))
-
-                uri = "%s#%s" % (self.remote_url, branch)
-                try:
-                    self.phabricator.maniphest.update(
-                        id=int(self.task[1:]),
-                        auxiliary={"std:maniphest:git:uri-branch": uri})
-                except:
-                    print("-> Failed to set std:maniphest:git:uri-branch to %s"
-                          % uri)
-
-            except Exception as e:
-                summary += "  * Failed: push wip branch: %s\n" % e
+        if not patch_attachement_failure:
+            summary += self.update_task_branch_uri(staging_remote_refname)
 
         if self.task and not self.branch_task:
             # Check if we already have a branch for this task
@@ -1539,9 +1558,8 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
             return False
 
         try:
-            self.repo.git.fetch(
-                self.staging_url, "refs/tags/phabricator/diff/%s" %
-                diff["id"])
+            self.repo.git.fetch(self.staging_url,
+                                self.get_diff_staging_ref(diff["id"]))
         except git.exc.GitCommandError as e:
             print(e)
             return False
