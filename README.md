@@ -130,3 +130,13 @@ You can now cleanup your branches:
   Task 'T3436' has been closed, do you want to delete branch 'xclaesse/wip/phab/T3436-fix-a-bug'? [yn] y
     -> Branch xclaesse/wip/phab/T3436-fix-a-bug was deleted
 ```
+
+HOW TO SET UP YOUR PROJECT
+==========================
+
+First of all, you need to add an `.arcconfig` to your project repository. This file
+is the same one as used by [arcanist] and you should follow their '[Configuring a New
+Project]' documentation to set write the configuration file.
+
+  [Configuring a New Project]: https://secure.phabricator.com/book/phabricator/article/arcanist_new_project/
+  [arcanist]: https://secure.phabricator.com/book/phabricator/article/arcanist/
