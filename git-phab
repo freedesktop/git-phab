@@ -1647,13 +1647,13 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
 
         return (commit, remote, branch)
 
-    def create_fake_fetch(self, revision, diff):
-        current_branch = self.repo.active_branch
+    def checkout_base_revision(self, diff):
         base_commit = diff.get("sourceControlBaseRevision")
         if base_commit:
             try:
                 self.repo.git.checkout(base_commit)
             except git.exc.GitCommandError:
+                print("Could not get base commit %s" % base_commit)
                 base_commit = None
 
         if not base_commit:
@@ -1665,11 +1665,18 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
                       Colors.ENDC))
             self.repo.git.checkout(self.repo.head.commit.hexsha)
 
+    def create_fake_fetch(self, revision, diff):
+        current_branch = self.repo.active_branch
         pq = self.get_differentials_to_apply_for_revision()
+
+        checkout_base_revision = True
         if pq:
             n = 0
             while pq != []:
                 (r, d) = pq.pop()
+                if checkout_base_revision:
+                    self.checkout_base_revision(d)
+                    checkout_base_revision = False
 
                 filename = self.write_patch_file(r, d)
                 print("Applying D{}".format(r['id']))
