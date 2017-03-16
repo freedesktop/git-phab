@@ -1105,6 +1105,7 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
             corpus=arc_message)
 
         fields = parsed_message["fields"]
+        fields["title"] = subject
         if not revision_id:
             revision = phab.differential.createrevision(fields=fields,
                                                         diffid=diff.diffid)
