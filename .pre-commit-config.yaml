@@ -1,5 +1,5 @@
 -   repo: https://github.com/pre-commit/pre-commit-hooks.git
-    sha: ff65d01841ad012d0a9aa1dc451fc4539d8b7baf
+    sha: 414cfa7b2322cf1c46cd33a49e9da833ad785473
     hooks:
     -   id: trailing-whitespace
     -   id: end-of-file-fixer
@@ -13,14 +13,15 @@
     -   id: requirements-txt-fixer
     -   id: flake8
         files: ^git-phab$
-        args: ["--max-complexity=40"]
+        args:
+        - --max-complexity=40
 -   repo: https://github.com/pre-commit/pre-commit.git
-    sha: 495e21b24dfc73624c8c7a16bf974da54e3217e7
+    sha: 6e5ac079273c1499add3a85d9b5394d0f1ef1520
     hooks:
     -   id: validate_config
     -   id: validate_manifest
 -   repo: https://github.com/asottile/reorder_python_imports.git
-    sha: 017e2f64306853ec7f000db52b8280da27eb3b96
+    sha: v0.3.2
     hooks:
     -   id: reorder-python-imports
         language_version: python2.7
