@@ -16,7 +16,6 @@ SYNOPSIS
 *git phab log* [-h] [<revision range>]
 *git phab fetch* [-h] ['<T123>']
 *git phab apply* [-h] ['<(T|D)123>'] [-n] [-o '<directory>']
-*git phab checkout* [-h] ['<T123>']
 *git phab browse* [-h] ['objects' ['objects' ...]]
 *git phab clean* [-h]
 *git phab land* [-h] [--no-push]
@@ -73,8 +72,8 @@ This only fetch and print the commit id, it won't create or checkout a branch.
 A new branch can then be created using, for example:
 
   git checkout -b my-branch FETCH_HEAD
-
-See also *checkout* command.
++
+With `--checkout` (or `-c`), fetch and checkout in a branch.
 
 *apply*::
 
@@ -84,12 +83,6 @@ With `--no-dependencies` (or `-n`), revision's dependencies will not be applied.
 +
 With `--output-directory` (or `-n`), patches aren't applied to the repository,
 but exported to a directory instead.
-
-*checkout*::
-
-Same as *fetch* but also create a new branch and check it out. If an existing
-branch is found for the same task it will prompt to reset that branch to the
-newly fetched commit, then checkout is as well.
 
 *browse*::
 
