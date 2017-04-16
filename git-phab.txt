@@ -81,7 +81,7 @@ Apply a revision and its dependencies.
 +
 With `--no-dependencies` (or `-n`), revision's dependencies will not be applied.
 +
-With `--output-directory` (or `-n`), patches aren't applied to the repository,
+With `--output-directory` (or `-o`), patches aren't applied to the repository,
 but exported to a directory instead.
 
 *browse*::
