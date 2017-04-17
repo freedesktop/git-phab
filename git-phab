@@ -1180,7 +1180,6 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
                 message = "\n".join(message)
 
             fields["summary"] = summary
-            fields["title"] = subject
             if linter_message:
                 message += "\n\n%s" % linter_message
 
