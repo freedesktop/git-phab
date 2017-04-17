@@ -1127,9 +1127,17 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
             arc_message = phab.differential.getcommitmessage(
                 edit="create", fields=phab_fields).response
 
-            arc_message = arc_message.replace(
-                "<<Replace this line with your Revision Title>>",
-                self.format_field(subject, True))
+            subject_formatted = self.format_field(subject, True)
+            # The substitution below should cover:
+            # "<<Replace this line with your Revision Title>>"
+            # "<<Replace this line with your revision title>"
+            arc_message = re.sub(
+                "<<Replace this line with your Revision Title>>?",
+                subject_formatted,
+                arc_message,
+                flags=re.I)
+            assert subject_formatted in arc_message
+
             if summary != '':
                 arc_message = arc_message.replace(
                     "Summary: ",
