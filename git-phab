@@ -577,7 +577,7 @@ Paste API Token from that page and press <enter>: """ % self.phabricator_uri)
         try:
             self.autostash |= self.repo.config_reader().get_value(
                 'phab', 'autostash')
-        except configparser.NoOptionError:
+        except (configparser.NoOptionError, configparser.NoSectionError):
             pass
 
         # Try to guess the task from branch name
